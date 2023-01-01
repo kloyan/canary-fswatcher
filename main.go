@@ -17,16 +17,16 @@ var backoffPolicy = []time.Duration{0, 250, 500, 1_000, 2_000, 4_000}
 type config struct {
 	watcher  *fsnotify.Watcher
 	tokenUrl string
-	waitFor  time.Duration
+	linger   time.Duration
 }
 
 func main() {
 	var path, tokenUrl string
-	var waitFor time.Duration
+	var linger time.Duration
 
 	flag.StringVar(&path, "path", "/tmp", "File or directory to monitor for changes")
-	flag.StringVar(&tokenUrl, "token-url", "", "URL canary token to be triggered on events")
-	flag.DurationVar(&waitFor, "wait-for", 1*time.Second, "Time to wait for new events to arrive before ping")
+	flag.StringVar(&tokenUrl, "token-url", "", "Canary token url to be pinged on events")
+	flag.DurationVar(&linger, "linger", 1*time.Second, "Time to wait for new events to arrive before pinging the token url")
 	flag.Parse()
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -48,7 +48,7 @@ func main() {
 		log.Panicf("could not monitor path: %v", err)
 	}
 
-	c := config{watcher: watcher, tokenUrl: tokenUrl, waitFor: waitFor}
+	c := config{watcher: watcher, tokenUrl: tokenUrl, linger: linger}
 	if err := c.startWatchLoop(watcher); err != nil {
 		log.Panicf("watch loop failed: %v", err)
 	}
@@ -81,7 +81,7 @@ func (c *config) startWatchLoop(watcher *fsnotify.Watcher) error {
 				t.Stop()
 			}
 
-			timers[e.Name] = time.AfterFunc(c.waitFor, func() { c.pingWithRetry(e) })
+			timers[e.Name] = time.AfterFunc(c.linger, func() { c.pingWithRetry(e) })
 		}
 	}
 }
