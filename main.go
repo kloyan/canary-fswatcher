@@ -12,17 +12,21 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-var backoffPolicy = []time.Duration{0, 250, 500, 1_000}
+var backoffPolicy = []time.Duration{0, 250, 500, 1_000, 2_000, 4_000}
 
 type config struct {
 	watcher  *fsnotify.Watcher
 	tokenUrl string
+	waitFor  time.Duration
 }
 
 func main() {
 	var path, tokenUrl string
+	var waitFor time.Duration
+
 	flag.StringVar(&path, "path", "/tmp", "File or directory to monitor for changes")
 	flag.StringVar(&tokenUrl, "token-url", "", "URL canary token to be triggered on events")
+	flag.DurationVar(&waitFor, "wait-for", 1*time.Second, "Time to wait for new events to arrive before ping")
 	flag.Parse()
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -44,13 +48,15 @@ func main() {
 		log.Panicf("could not monitor path: %v", err)
 	}
 
-	c := config{watcher: watcher, tokenUrl: tokenUrl}
+	c := config{watcher: watcher, tokenUrl: tokenUrl, waitFor: waitFor}
 	if err := c.startWatchLoop(watcher); err != nil {
 		log.Panicf("watch loop failed: %v", err)
 	}
 }
 
 func (c *config) startWatchLoop(watcher *fsnotify.Watcher) error {
+	timers := map[string]*time.Timer{}
+
 	for {
 		select {
 		case err, ok := <-watcher.Errors:
@@ -66,12 +72,16 @@ func (c *config) startWatchLoop(watcher *fsnotify.Watcher) error {
 				return nil
 			}
 
-			// todo: implement dedup
+			// Ignore CHMOD events as they are too frequent
 			if e.Has(fsnotify.Chmod) {
 				continue
 			}
 
-			c.pingWithRetry(e)
+			if t, ok := timers[e.Name]; ok {
+				t.Stop()
+			}
+
+			timers[e.Name] = time.AfterFunc(c.waitFor, func() { c.pingWithRetry(e) })
 		}
 	}
 }

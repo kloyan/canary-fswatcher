@@ -1,4 +1,4 @@
-module github.com/kloyan/canaryfs
+module github.com/kloyan/canary-fswatcher
 
 go 1.19
 
