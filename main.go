@@ -86,6 +86,9 @@ func (c *config) ping(e fsnotify.Event) error {
 		return err
 	}
 
+	req.Header.Add("X-Canary-Path-Name", e.Name)
+	req.Header.Add("X-Canary-Path-Op", e.Op.String())
+
 	resp, err := http.DefaultClient.Do(req)
 
 	if err != nil {
