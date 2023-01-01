@@ -20,8 +20,8 @@ type config struct {
 func main() {
 	var dir, token string
 
-	flag.StringVar(&dir, "dir", "/tmp", "Directory to monitor for changes")
-	flag.StringVar(&token, "token", "", "URL token to be triggered")
+	flag.StringVar(&dir, "path", "/tmp", "File or directory to monitor for changes")
+	flag.StringVar(&token, "token-url", "", "URL token to be triggered")
 	flag.Parse()
 
 	watcher, err := fsnotify.NewWatcher()
@@ -36,20 +36,23 @@ func main() {
 	}
 
 	c := config{watcher: watcher, tokenUrl: token}
-
-	c.watchLoop(watcher, token)
+	if err := c.startWatchLoop(watcher); err != nil {
+		log.Fatalf("watch loop failure: %v", err)
+	}
 }
 
-func (c *config) watchLoop(watcher *fsnotify.Watcher, token string) error {
+func (c *config) startWatchLoop(watcher *fsnotify.Watcher) error {
 	for {
 		select {
 		case err, ok := <-watcher.Errors:
+			// Indicates that the Errors channel was closed
 			if !ok {
 				return nil
 			}
 
 			return err
 		case e, ok := <-watcher.Events:
+			// Indicates that the Events channel was closed
 			if !ok {
 				return nil
 			}
@@ -64,33 +67,28 @@ func (c *config) watchLoop(watcher *fsnotify.Watcher, token string) error {
 	}
 }
 
-func (c *config) pingWithRetry(e fsnotify.Event) {
-	for _, b := range backoffPolicy {
-		time.Sleep(time.Millisecond * b)
+func (c *config) pingWithRetry(event fsnotify.Event) {
+	req, _ := http.NewRequest("HEAD", c.tokenUrl, nil)
+	req.Header.Add("X-Canary-Path-Name", event.Name)
+	req.Header.Add("X-Canary-Path-Op", event.Op.String())
 
-		err := c.ping(e)
+	for i, b := range backoffPolicy {
+		time.Sleep(b * time.Millisecond)
+
+		err := c.ping(req)
 		if err == nil {
-			log.Printf("successfully pinged canary token for %s -> %s", e.Op, e.Name)
+			log.Printf("ping successful for %s", event.Name)
 			return
 		}
 
-		log.Printf("failed to ping canary token: %v", err)
+		log.Printf("ping failed on attempt %d: %v", i, err)
 	}
 
-	log.Printf("skipped canary ping due to earlier failure")
+	log.Printf("ping skipped due to earlier failure")
 }
 
-func (c *config) ping(e fsnotify.Event) error {
-	req, err := http.NewRequest("HEAD", c.tokenUrl, nil)
-	if err != nil {
-		return err
-	}
-
-	req.Header.Add("X-Canary-Path-Name", e.Name)
-	req.Header.Add("X-Canary-Path-Op", e.Op.String())
-
+func (c *config) ping(req *http.Request) error {
 	resp, err := http.DefaultClient.Do(req)
-
 	if err != nil {
 		return err
 	}
