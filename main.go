@@ -2,14 +2,18 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"golang.org/x/exp/slog"
 )
 
+var backoffPolicy = []time.Duration{0, 250, 500, 1_000}
+
 type config struct {
-	watchDir string
+	watcher  *fsnotify.Watcher
 	tokenUrl string
 }
 
@@ -22,35 +26,32 @@ func main() {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		slog.Error("could not create watcher", err)
-		panic(err)
+		log.Fatalf("could not create watcher: %v", err)
 	}
 	defer watcher.Close()
 
-	go watchLoop(watcher, token)
-
 	err = watcher.Add(dir)
 	if err != nil {
-		slog.Error("could not create watcher", err)
-		panic(err)
+		log.Fatalf("could not add watch dir: %v", err)
 	}
 
-	// Block main goroutine forever.
-	select {}
+	c := config{watcher: watcher, tokenUrl: token}
+
+	c.watchLoop(watcher, token)
 }
 
-func watchLoop(watcher *fsnotify.Watcher, token string) {
+func (c *config) watchLoop(watcher *fsnotify.Watcher, token string) error {
 	for {
 		select {
 		case err, ok := <-watcher.Errors:
 			if !ok {
-				return
+				return nil
 			}
 
-			slog.Error("encountered watch error", err)
+			return err
 		case e, ok := <-watcher.Events:
 			if !ok {
-				return
+				return nil
 			}
 
 			// todo: implement dedup
@@ -58,19 +59,43 @@ func watchLoop(watcher *fsnotify.Watcher, token string) {
 				continue
 			}
 
-			pingToken(e, token)
+			c.pingWithRetry(e)
 		}
 	}
 }
 
-// todo: implement retry
-func pingToken(e fsnotify.Event, url string) {
-	resp, err := http.Head(url)
-	if err == nil {
-		defer resp.Body.Close()
-		slog.Info("pinged canary token for", e)
-		return
+func (c *config) pingWithRetry(e fsnotify.Event) {
+	for _, b := range backoffPolicy {
+		time.Sleep(time.Millisecond * b)
+
+		err := c.ping(e)
+		if err == nil {
+			log.Printf("successfully pinged canary token for %s -> %s", e.Op, e.Name)
+			return
+		}
+
+		log.Printf("failed to ping canary token: %v", err)
 	}
 
-	slog.Error("failed to ping canary token", err)
+	log.Printf("skipped canary ping due to earlier failure")
+}
+
+func (c *config) ping(e fsnotify.Event) error {
+	req, err := http.NewRequest("HEAD", c.tokenUrl, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("unexpected status %s", resp.Status)
+	}
+
+	return nil
 }
