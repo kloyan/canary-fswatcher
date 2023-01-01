@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -18,26 +20,33 @@ type config struct {
 }
 
 func main() {
-	var dir, token string
-
-	flag.StringVar(&dir, "path", "/tmp", "File or directory to monitor for changes")
-	flag.StringVar(&token, "token-url", "", "URL token to be triggered")
+	var path, tokenUrl string
+	flag.StringVar(&path, "path", "/tmp", "File or directory to monitor for changes")
+	flag.StringVar(&tokenUrl, "token-url", "", "URL canary token to be triggered on events")
 	flag.Parse()
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		log.Panicf("path %s does not exist", path)
+	}
+
+	if _, err := url.ParseRequestURI(tokenUrl); err != nil {
+		log.Panicf("url %s is invalid: %v", tokenUrl, err)
+	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Fatalf("could not create watcher: %v", err)
+		log.Panicf("could not create watcher: %v", err)
 	}
 	defer watcher.Close()
 
-	err = watcher.Add(dir)
+	err = watcher.Add(path)
 	if err != nil {
-		log.Fatalf("could not add watch dir: %v", err)
+		log.Panicf("could not monitor path: %v", err)
 	}
 
-	c := config{watcher: watcher, tokenUrl: token}
+	c := config{watcher: watcher, tokenUrl: tokenUrl}
 	if err := c.startWatchLoop(watcher); err != nil {
-		log.Fatalf("watch loop failure: %v", err)
+		log.Panicf("watch loop failed: %v", err)
 	}
 }
 
