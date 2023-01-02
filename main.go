@@ -25,7 +25,7 @@ func main() {
 	var linger time.Duration
 
 	flag.StringVar(&path, "path", "/tmp", "File or directory to monitor for changes")
-	flag.StringVar(&tokenUrl, "token-url", "", "Canary token url to be pinged on events")
+	flag.StringVar(&tokenUrl, "token-url", "", "Canary token url generated from canarytokens.org to be pinged on events")
 	flag.DurationVar(&linger, "linger", 1*time.Second, "Time to wait for new events to arrive before pinging the token url")
 	flag.Parse()
 
