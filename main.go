@@ -12,7 +12,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-var backoffPolicy = []time.Duration{0, 250, 500, 1_000, 2_000, 4_000}
+var backoffPlan = []time.Duration{0, 250, 500, 1_000, 2_000, 4_000}
 
 type config struct {
 	watcher  *fsnotify.Watcher
@@ -30,11 +30,13 @@ func main() {
 	flag.Parse()
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Panicf("path %s does not exist", path)
+		flag.Usage()
+		log.Fatalf("path %s does not exist", path)
 	}
 
 	if _, err := url.ParseRequestURI(tokenUrl); err != nil {
-		log.Panicf("url %s is invalid: %v", tokenUrl, err)
+		flag.Usage()
+		log.Fatalf("url %s is invalid: %v", tokenUrl, flag.ErrHelp)
 	}
 
 	watcher, err := fsnotify.NewWatcher()
@@ -48,7 +50,7 @@ func main() {
 		log.Panicf("could not monitor path: %v", err)
 	}
 
-	c := config{watcher: watcher, tokenUrl: tokenUrl, linger: linger}
+	c := config{watcher, tokenUrl, linger}
 	if err := c.startWatchLoop(watcher); err != nil {
 		log.Panicf("watch loop failed: %v", err)
 	}
@@ -91,8 +93,8 @@ func (c *config) pingWithRetry(event fsnotify.Event) {
 	req.Header.Add("X-Canary-Path-Name", event.Name)
 	req.Header.Add("X-Canary-Path-Op", event.Op.String())
 
-	for i, b := range backoffPolicy {
-		time.Sleep(b * time.Millisecond)
+	for i, d := range backoffPlan {
+		time.Sleep(d * time.Millisecond)
 
 		err := c.ping(req)
 		if err == nil {
