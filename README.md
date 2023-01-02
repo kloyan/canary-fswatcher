@@ -1,6 +1,6 @@
 # Canary FSWatcher
 
-Canary FSWatcher is a CLI tool which monitors a file or directory and fires a [canarytokens.org](https://canarytokens.org/generate) URL webhook whenever the target is accessed.
+Canary FSWatcher is a CLI tool which monitors a file or directory and fires a [canarytokens.org](https://canarytokens.org/generate) URL webhook whenever the target is accessed. The main use case is to quickly discover that a server has been breached. Create a [honeypot file](https://en.wikipedia.org/wiki/Honeypot_(computing)), put it into an easy to find location and monitor its access via this tool. 
 
 ## Why?
 
@@ -16,6 +16,8 @@ Both the full path name and the operation are included in the token request as h
 X-Canary-Path-Name: /tmp/my-dir/my-file
 X-Canary-Path-Op: WRITE
 ```
+
+As noted in the [canaryfy](https://github.com/thinkst/canaryfy) it's good idea to move the binary of an unexpected location. This would make it harder to detect by an untrusted party :)
 
 ## Usage
 
